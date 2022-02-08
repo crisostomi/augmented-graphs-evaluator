@@ -7,13 +7,13 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import torchmetrics
+from hydra.utils import instantiate
 from torch.optim import Optimizer
 
 from nn_core.common import PROJECT_ROOT
 from nn_core.model_logging import NNLogger
 
 from age.data.datamodule import MetaData
-from age.modules.module import CNN
 
 pylogger = logging.getLogger(__name__)
 
@@ -30,16 +30,17 @@ class MyLightningModule(pl.LightningModule):
 
         self.metadata = metadata
 
-        # example
         metric = torchmetrics.Accuracy()
         self.train_accuracy = metric.clone()
         self.val_accuracy = metric.clone()
         self.test_accuracy = metric.clone()
 
-        self.model = CNN(num_classes=len(metadata.class_vocab))
+        self.model = instantiate(
+            self.hparams.model, feature_dim=self.metadata.feature_dim, num_classes=self.metadata.num_classes
+        )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Method for the forward pass.
+    def forward(self, batch) -> torch.Tensor:
+        """Method for the forward qpass.
 
         'training_step', 'validation_step' and 'test_step' should call
         this method in order to compute the output predictions and the loss.
@@ -47,18 +48,15 @@ class MyLightningModule(pl.LightningModule):
         Returns:
             output_dict: forward output containing the predictions (output logits ecc...) and the loss if any.
         """
-        # example
-        return self.model(x)
+        return self.model(batch)
 
-    # example
-    def step(self, x, y) -> Mapping[str, Any]:
-        logits = self(x)
-        loss = F.cross_entropy(logits, y)
+    def step(self, batch) -> Mapping[str, Any]:
+        logits = self(batch)
+        loss = F.cross_entropy(logits, batch.y)
         return {"logits": logits.detach(), "loss": loss}
 
     def training_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        x, y = batch
-        step_out = self.step(x, y)
+        step_out = self.step(batch)
 
         self.log_dict(
             {"loss/train": step_out["loss"].cpu().detach()},
@@ -67,19 +65,10 @@ class MyLightningModule(pl.LightningModule):
             prog_bar=True,
         )
 
-        self.train_accuracy(torch.softmax(step_out["logits"], dim=-1), y)
-        self.log_dict(
-            {
-                "acc/train": self.train_accuracy,
-            },
-            on_epoch=True,
-        )
-
         return step_out
 
     def validation_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        x, y = batch
-        step_out = self.step(x, y)
+        step_out = self.step(batch)
 
         self.log_dict(
             {"loss/val": step_out["loss"].cpu().detach()},
@@ -88,7 +77,7 @@ class MyLightningModule(pl.LightningModule):
             prog_bar=True,
         )
 
-        self.val_accuracy(torch.softmax(step_out["logits"], dim=-1), y)
+        self.val_accuracy(torch.softmax(step_out["logits"], dim=-1), batch.y)
         self.log_dict(
             {
                 "acc/val": self.val_accuracy,
@@ -99,14 +88,13 @@ class MyLightningModule(pl.LightningModule):
         return step_out
 
     def test_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        x, y = batch
-        step_out = self.step(x, y)
+        step_out = self.step(batch)
 
         self.log_dict(
             {"loss/test": step_out["loss"].cpu().detach()},
         )
 
-        self.test_accuracy(torch.softmax(step_out["logits"], dim=-1), y)
+        self.test_accuracy(torch.softmax(step_out["logits"], dim=-1), batch.y)
         self.log_dict(
             {
                 "acc/test": self.test_accuracy,

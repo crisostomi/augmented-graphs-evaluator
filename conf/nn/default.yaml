@@ -1,5 +1,7 @@
 data:
-  _target_: age.data.datamodule.MyDataModule
+  _target_: age.data.datamodule.GraphDataModule
+  dataset_name: PROTEINS
+  data_dir: ${oc.env:PROJECT_ROOT}/data/${nn.data.dataset_name}/raw/
 
   datasets:
     train:
@@ -23,11 +25,16 @@ data:
     val: 16
     test: 16
 
-  # example
-  val_percentage: 0.1
-
 module:
   _target_: age.pl_modules.pl_module.MyLightningModule
+
+  model:
+    _target_: age.modules.baseline.GraphClassifier
+    num_mlp_layers: 1
+    hidden_dim: 64
+    feature_dim: ???
+    num_classes: ???
+    output_dim: 64
 
   optimizer:
     #  Adam-oriented deep learning
